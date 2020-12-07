@@ -1,0 +1,23 @@
+{
+    "name": "jldorta/SimpleRESTfullApi",
+    "description": "Simple RESTfull Api LIB (Codeigniter 4)",
+    "type": "library",
+    "license": "GPL3",
+    "authors": [
+        {
+            "name": "Jorge L Dorta",
+            "email": "jldorta@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "php": ">=7.0.0",
+        "codeigniter4/framework": "^4"
+    },
+    "autoload": {
+        "psr-4": {
+            "SimpleRESTfullApi\\" : "src/"
+        },
+        "files": ["src/Autoload.php"]
+    }
+}
