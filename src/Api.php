@@ -7,6 +7,8 @@ use CodeIgniter\API\ResponseTrait;
 class Api extends Controller {
     use ResponseTrait;
 
+	protected $format = 'json';
+
     private $db;
     private $builder;
 
@@ -40,38 +42,60 @@ class Api extends Controller {
         }
 			
 		if (empty($this->fields = $this->db->getFieldNames($table))) {
-            $this->failValidationError("Method Not Allowed");
+            $this->fail("Method Not Allowed");
             die($response->send());
         }
-
-        $this->builder = $this->db->table($table);
     }
     
-	public function get($object = '', $id = 0, $relations = []) {
-        if (!empty($relations)) {
-			
-		}
-        
+	private function get($object = '', $id = 0) {
+		$builder = $this->db->table($object);
+
+        $builder->where("`{$object}`.id", (int)$id, FALSE);
+
+		if($query = $builder->get()) 
+			return $query->getRow();
+		else
+			return [];
+	}
+
+	public function restGet($object = '', $id = 0, $relations = "") {
+		$builder = $this->db->table($object);
+
         foreach ($this->request->getGet() as $key => $value) {
 			if (in_array($key, $this->fields)) {
-				$this->builder->where("`{$object}`.{$key}", $value, true);
+				$builder->where("`{$object}`.{$key}", $value, true);
 			}
 			
 			if (($end = strpos($key, "_like")) && ($key = substr($key, 0, $end))) {
-				$this->builder->like("`{$object}`.{$key}", $value,);
+				$builder->like("`{$object}`.{$key}", $value,);
 			}
 		}
         
-        if ($id)
-			$this->builder->where("`{$object}`.id", (int)$id, FALSE);
-		if($query = $this->builder->get()) 
-			return $this->respond(empty($id) ? $query->getResult() : $query->getRow());
+        if ($id && strtolower($id) != 'all')
+			$builder->where("`{$object}`.id", (int)$id, FALSE);
+
+		if($query = $builder->get()) 
+			$rows = $query->getResult();
 		else
-			return $this->failNotFound("Not Found");
+			$rows = [];
 		
+		$return = (object)[];
+
+		foreach ($rows as $row) {
+			foreach (explode(',', $relations) as $relation) {
+				if (in_array($relation, $this->tables) && !empty($row->$relation))
+					$row->$relation = $this->get($relation, $row->$relation);
+			}
+
+			$return->{$row->id} = $row;
+		}
+
+		return $this->respond(empty($id) || strtolower($id) == 'all' ? $return : $return->$id);
 	}
 	
-	public function post($object = '') {
+	public function restPost($object = '') {
+		$builder = $this->db->table($object);
+
 		$request = $this->request->getJSON();
         
         $data = [];
@@ -80,15 +104,17 @@ class Api extends Controller {
 				$data[$field] = $request->{$field};
 		}
 		
-		if ($this->builder->insert($data)) {
-            $query = $this->builder->getWhere(['id' => $this->db->insertID()]);
+		if ($builder->insert($data)) {
+            $query = $builder->getWhere(['id' => $this->db->insertID()]);
 			return $this->respondCreated($query->getRow());
         }
         
         return $this->fail("Bad Request");
 	}
 	
-	public function put($object = '', $id = 0) {
+	public function restPut($object = '', $id = 0) {
+		$builder = $this->db->table($object);
+
 		if (empty($id)) {
 			return $this->fail("Bad Request");
 		}
@@ -101,22 +127,24 @@ class Api extends Controller {
 				$data[$field] = $request->{$field};
 		}
 		
-		$this->builder->where("`{$object}`.id", (int)$id, FALSE);
-		if ($this->builder->update($data) && $this->db->affectedRows()) {
-            $query = $this->builder->getWhere(['id' => $id]);
+		$builder->where("`{$object}`.id", (int)$id, FALSE);
+		if ($builder->update($data) && $this->db->affectedRows()) {
+            $query = $builder->getWhere(['id' => $id]);
 			return $this->respond($query->getRow());	
         }
         
         return $this->fail("Not Found");
 	}
 	
-	public function delete($object = '', $id = 0) {
+	public function restDelete($object = '', $id = 0) {
+		$builder = $this->db->table($object);
+
 		if (empty($id)) {
 			return $this->fail("Bad Request");
 		}
 		
-		$this->builder->where("`{$object}`.id", (int)$id, FALSE);
-		if ($this->builder->delete() && $this->db->affectedRows())
+		$builder->where("`{$object}`.id", (int)$id, FALSE);
+		if ($builder->delete() && $this->db->affectedRows())
             return $this->respondDeleted(['id' => $id]);	
         
         return $this->failNotFound("Not Found");
