@@ -23,12 +23,6 @@ class Api extends Controller {
 		// Do Not Edit This Line
         parent::initController($request, $response, $logger);
 
-        $this->db = \Config\Database::connect();
-		$this->db->query("SET time_zone='".date('P')."'");
-
-        
-		$this->tables = $this->db->listTables();
-        
         $router = service('router');
 
         if (empty($router->params()) || empty($table = $router->params()[0])) {
@@ -46,16 +40,61 @@ class Api extends Controller {
             die($response->send());
         }
     }
+
+	public function __construct() {
+		$this->db = \Config\Database::connect();
+		$this->db->query("SET time_zone='".date('P')."'");
+
+		$this->tables = $this->db->listTables();
+	}
     
-	private function get($object = '', $id = 0) {
+	public function get($request) {
+		$request = explode("?", $request);
+		
+		$params = $request[1] ?? "";
+
+		$request = explode("/", $request[0]);
+
+		$object 	= $request[0];
+		$id			= $request[1] ?? 0;
+		$relations	= !empty($request[2]) ? explode(',', $request[2]) : [];
+
+		parse_str($params, $params);
+
 		$builder = $this->db->table($object);
 
-        $builder->where("`{$object}`.id", (int)$id, FALSE);
+		$fields = $this->db->getFieldNames($object);
+
+		foreach ($params as $key => $value) {
+			if (in_array($key, $fields)) {
+				$builder->where("`{$object}`.{$key}", $value, true);
+			}
+			
+			if (($end = strpos($key, "_like")) && ($key = substr($key, 0, $end))) {
+				$builder->like("`{$object}`.{$key}", $value,);
+			}
+		}
+
+        if ($id && strtolower($id) != 'all')
+			$builder->where("`{$object}`.id", (int)$id, FALSE);
 
 		if($query = $builder->get()) 
-			return $query->getRow();
+			$rows = $query->getResult();
 		else
-			return [];
+			$rows = [];
+
+		$return = (object)[];
+
+		foreach ($rows as $row) {
+			foreach ($relations as $relation) {
+				if (in_array($relation, $this->tables) && !empty($row->$relation))
+					$row->$relation = $this->get("{$relation}/{$row->$relation}");
+			}
+
+			$return->{$row->id} = $row;
+		}
+
+		return empty($id) || strtolower($id) == 'all' ? $return : $return->$id;
 	}
 
 	public function restGet($object = '', $id = 0, $relations = "") {
@@ -84,7 +123,7 @@ class Api extends Controller {
 		foreach ($rows as $row) {
 			foreach (explode(',', $relations) as $relation) {
 				if (in_array($relation, $this->tables) && !empty($row->$relation))
-					$row->$relation = $this->get($relation, $row->$relation);
+					$row->$relation = $this->get("{$relation}/{$row->$relation}");
 			}
 
 			$return->{$row->id} = $row;
