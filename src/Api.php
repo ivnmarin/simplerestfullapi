@@ -139,7 +139,7 @@ class Api extends Controller {
         
         $data = [];
 		foreach ($this->fields as $field) {
-			if (isset($request->{$field}))
+			if (property_exists($request, $field))
 				$data[$field] = $request->{$field};
 		}
 		
@@ -162,7 +162,7 @@ class Api extends Controller {
 		
 		$data = [];
 		foreach ($this->fields as $field) {
-			if (isset($request->{$field}))
+			if (property_exists($request, $field))
 				$data[$field] = $request->{$field};
 		}
 		
