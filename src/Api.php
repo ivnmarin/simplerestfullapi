@@ -157,7 +157,11 @@ class Api extends Controller {
 		if (empty($id)) {
 			return $this->fail("Bad Request");
 		}
-		
+
+        if ($builder->getWhere(['id' => $id])->getRow() === null) {
+            return $this->fail("Not Found");
+        }
+
 		$request = (object)$this->request->getJSON();
 		
 		$data = [];
@@ -167,12 +171,17 @@ class Api extends Controller {
 		}
 		
 		$builder->where("`{$object}`.id", (int)$id, FALSE);
-		if ($builder->update($data) && $this->db->affectedRows()) {
-            $query = $builder->getWhere(['id' => $id]);
-			return $this->respond($query->getRow());	
+
+        try {
+            if ($builder->update($data)) {
+                $query = $builder->getWhere(['id' => $id]);
+                return $this->respond($query->getRow());
+            }
+        } catch (\Exception $e) {
+            return $this->fail($e->getMessage());
         }
-        
-        return $this->fail("Not Found");
+
+        return $this->fail($this->dbError());
 	}
 	
 	public function restDelete($object = '', $id = 0) {
@@ -188,5 +197,23 @@ class Api extends Controller {
         
         return $this->failNotFound("Not Found");
 	}
+
+    public function dbError()
+    {
+        $msg = [];
+        $error = $this->db->error();
+        foreach (['code', 'title', 'message'] as $error_field) {
+            if (!empty($error[$error_field])) {
+                $msg[$error_field] = $error[$error_field];
+            }
+        }
+
+        if (count($msg)) {
+            return implode(' - ', $msg);
+        }
+
+        return "Fail update, error unknown";
+    }
+
 
 }
