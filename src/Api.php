@@ -72,8 +72,12 @@ class Api extends Controller {
 			}
 			
 			if (($end = strpos($key, "_like")) && ($key = substr($key, 0, $end))) {
-				$builder->like("`{$object}`.{$key}", $value,);
+				$builder->like("`{$object}`.{$key}", $value);
 			}
+
+            if (($end = strpos($key, "_orderby")) && ($key = substr($key, 0, $end)) && in_array($key, $this->fields)) {
+                $builder->orderBy($key, $value);
+            }
 		}
 
         if ($id && strtolower($id) != 'all')
@@ -108,8 +112,12 @@ class Api extends Controller {
 			}
 			
 			if (($end = strpos($key, "_like")) && ($key = substr($key, 0, $end))) {
-				$builder->like("`{$object}`.{$key}", $value,);
+				$builder->like("`{$object}`.{$key}", $value);
 			}
+
+            if (($end = strpos($key, "_orderby")) && ($key = substr($key, 0, $end)) && in_array($key, $this->fields)) {
+                $builder->orderBy($key, $value);
+            }
 		}
         
         if ($id && strtolower($id) != 'all')
