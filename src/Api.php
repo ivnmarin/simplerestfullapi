@@ -58,6 +58,7 @@ class Api extends Controller {
 		$object 	= $request[0];
 		$id			= $request[1] ?? 0;
 		$relations	= !empty($request[2]) ? explode(',', $request[2]) : [];
+        $pk         = $this->primaryKey($object);
 
 		parse_str($params, $params);
 
@@ -71,12 +72,16 @@ class Api extends Controller {
 			}
 			
 			if (($end = strpos($key, "_like")) && ($key = substr($key, 0, $end))) {
-				$builder->like("`{$object}`.{$key}", $value,);
+				$builder->like("`{$object}`.{$key}", $value);
 			}
+
+            if (($end = strpos($key, "_orderby")) && ($key = substr($key, 0, $end)) && in_array($key, $this->fields)) {
+                $builder->orderBy($key, $value);
+            }
 		}
 
         if ($id && strtolower($id) != 'all')
-			$builder->where("`{$object}`.id", (int)$id, FALSE);
+			$builder->where("`{$object}`.{$pk}", (int)$id, FALSE);
 
 		if($query = $builder->get()) 
 			$rows = $query->getResult();
@@ -91,13 +96,14 @@ class Api extends Controller {
 					$row->$relation = $this->get("{$relation}/{$row->$relation}");
 			}
 
-			$return->{$row->id} = $row;
+			$return->{$row->{$pk}} = $row;
 		}
 
 		return empty($id) || strtolower($id) == 'all' ? $return : $return->$id;
 	}
 
 	public function restGet($object = '', $id = 0, $relations = "") {
+        $pk = $this->primaryKey($object);
 		$builder = $this->db->table($object);
 
         foreach ($this->request->getGet() as $key => $value) {
@@ -106,12 +112,16 @@ class Api extends Controller {
 			}
 			
 			if (($end = strpos($key, "_like")) && ($key = substr($key, 0, $end))) {
-				$builder->like("`{$object}`.{$key}", $value,);
+				$builder->like("`{$object}`.{$key}", $value);
 			}
+
+            if (($end = strpos($key, "_orderby")) && ($key = substr($key, 0, $end)) && in_array($key, $this->fields)) {
+                $builder->orderBy($key, $value);
+            }
 		}
         
         if ($id && strtolower($id) != 'all')
-			$builder->where("`{$object}`.id", (int)$id, FALSE);
+            $builder->where("`{$object}`.{$pk}", (int)$id, FALSE);
 
 		if($query = $builder->get()) 
 			$rows = $query->getResult();
@@ -126,7 +136,7 @@ class Api extends Controller {
 					$row->$relation = $this->get("{$relation}/{$row->$relation}");
 			}
 
-			$return->{$row->id} = $row;
+			$return->{$row->{$pk}} = $row;
 		}
 
 		return $this->respond(empty($id) || strtolower($id) == 'all' ? $return : $return->$id);
@@ -144,7 +154,8 @@ class Api extends Controller {
 		}
 		
 		if ($builder->insert($data)) {
-            $query = $builder->getWhere(['id' => $this->db->insertID()]);
+            $pk = $this->primaryKey($object);
+            $query = $builder->getWhere(["{$pk}" => $this->db->insertID()]);
 			return $this->respondCreated($query->getRow());
         }
         
@@ -157,7 +168,13 @@ class Api extends Controller {
 		if (empty($id)) {
 			return $this->fail("Bad Request");
 		}
-		
+
+        $pk = $this->primaryKey($object);
+
+        if ($builder->getWhere(["{$pk}" => $id])->getRow() === null) {
+            return $this->fail("Not Found");
+        }
+
 		$request = (object)$this->request->getJSON();
 		
 		$data = [];
@@ -166,13 +183,18 @@ class Api extends Controller {
 				$data[$field] = $request->{$field};
 		}
 		
-		$builder->where("`{$object}`.id", (int)$id, FALSE);
-		if ($builder->update($data) && $this->db->affectedRows()) {
-            $query = $builder->getWhere(['id' => $id]);
-			return $this->respond($query->getRow());	
+		$builder->where("`{$object}`.{$pk}", (int)$id, FALSE);
+
+        try {
+            if ($builder->update($data)) {
+                $query = $builder->getWhere(["{$pk}" => $id]);
+                return $this->respond($query->getRow());
+            }
+        } catch (\Exception $e) {
+            return $this->fail($e->getMessage());
         }
-        
-        return $this->fail("Not Found");
+
+        return $this->fail($this->dbError());
 	}
 	
 	public function restDelete($object = '', $id = 0) {
@@ -182,11 +204,38 @@ class Api extends Controller {
 			return $this->fail("Bad Request");
 		}
 		
-		$builder->where("`{$object}`.id", (int)$id, FALSE);
+        $pk = $this->primaryKey($object);
+
+		$builder->where("`{$object}`.{$pk}", (int)$id, FALSE);
 		if ($builder->delete() && $this->db->affectedRows())
-            return $this->respondDeleted(['id' => $id]);	
+            return $this->respondDeleted(["{$pk}" => $id]);
         
         return $this->failNotFound("Not Found");
 	}
+
+    public function primaryKey($object)
+    {
+        return array_reduce($this->db->getFieldData($object), function($carry, $item) {
+            return !empty($item->primary_key) ? $item->name : $carry;
+        }, 'id');
+    }
+
+    public function dbError()
+    {
+        $msg = [];
+        $error = $this->db->error();
+        foreach (['code', 'title', 'message'] as $error_field) {
+            if (!empty($error[$error_field])) {
+                $msg[$error_field] = $error[$error_field];
+            }
+        }
+
+        if (count($msg)) {
+            return implode(' - ', $msg);
+        }
+
+        return "Fail update, error unknown";
+    }
+
 
 }
