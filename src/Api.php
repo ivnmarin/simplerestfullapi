@@ -154,8 +154,9 @@ class Api extends Controller {
 		}
 		
 		if ($builder->insert($data)) {
+            $id = $this->db->insertID();
             $pk = $this->primaryKey($object);
-            $query = $builder->getWhere(["{$pk}" => $this->db->insertID()]);
+            $query = $builder->getWhere(["{$pk}" => $id]);
 			return $this->respondCreated($query->getRow());
         }
         
