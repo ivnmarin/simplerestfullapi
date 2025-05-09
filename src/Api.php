@@ -14,6 +14,8 @@ class Api extends Controller {
 
     private $tables = [];
     private $fields = [];
+
+    private $fieldsConfig = [];
     
     /**
 	 * Constructor.
@@ -139,7 +141,7 @@ class Api extends Controller {
 			$return->{$row->{$pk}} = $row;
 		}
 
-		return $this->respond(empty($id) || strtolower($id) == 'all' ? $return : $return->$id);
+		return $this->respond(empty($id) || strtolower($id) == 'all' ? $return : $return->{$id} ?? null);
 	}
 	
 	public function restPost($object = '') {
@@ -147,10 +149,13 @@ class Api extends Controller {
 
 		$request = $this->request->getJSON();
         
+        $this->getFieldsConfig($object);
+
         $data = [];
 		foreach ($this->fields as $field) {
-			if (property_exists($request, $field))
-				$data[$field] = $request->{$field};
+			if (property_exists($request, $field)) {
+                $data[$field] = $this->fieldValue($field, $request->{$field});
+            }
 		}
 		
 		if ($builder->insert($data)) {
@@ -177,11 +182,13 @@ class Api extends Controller {
         }
 
 		$request = (object)$this->request->getJSON();
-		
+		$this->getFieldsConfig($object);
+
 		$data = [];
 		foreach ($this->fields as $field) {
-			if (property_exists($request, $field))
-				$data[$field] = $request->{$field};
+			if (property_exists($request, $field)) {
+				$data[$field] = $this->fieldValue($field, $request->{$field});
+            }
 		}
 		
 		$builder->where("`{$object}`.{$pk}", (int)$id, FALSE);
@@ -197,6 +204,26 @@ class Api extends Controller {
 
         return $this->fail($this->dbError());
 	}
+
+    protected function fieldValue($field, $value) {
+        if (empty($value) && $value === '' && 
+            (($this->fieldsConfig[$field])->nullable ?? false) &&
+            !in_array(($this->fieldsConfig[$field])->type, ['varchar', 'char'])
+        ) {
+            $value = null;
+        }
+
+        return $value;
+    }
+
+    protected function getFieldsConfig($object) {
+        if (count($this->fieldsConfig) === 0) {
+            $fieldsConfig = $this->db->getFieldData($object);
+            $this->fieldsConfig = array_column($fieldsConfig, null, 'name');
+        }
+
+        return $this->fieldsConfig;
+    }
 	
 	public function restDelete($object = '', $id = 0) {
 		$builder = $this->db->table($object);
